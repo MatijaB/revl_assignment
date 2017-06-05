@@ -1,16 +1,16 @@
-from sqlalchemy import Column, Integer, Float, Interval, ForeignKey, String
+from sqlalchemy import Column, Integer, Float, Interval, ForeignKey, String, create_engine
 
-from sqlalchemy.orm import relationship, backref
+from sqlalchemy.orm import relationship, backref, sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
-# specific_vat(default=1.), untaxable_part(default=0.), max_taxable(default=None), flat_vat(default=0), max_vat(default=None)
+
 class VatRule(Base):
     __tablename__ = 'vat_rules'
 
     id = Column(Integer, primary_key=True)
-    country = Column(String)
-    product = Column(String)
+    area_id = Column(Integer, nullable=False)
+    product_id = Column(Integer)
     min_prevat_amount = Column(Float)
     max_prevat_amount = Column(Float)
 
@@ -27,4 +27,26 @@ class VatRule(Base):
                           primaryjoin=('VatRule.parent_id==VatRule.id'),
                           backref=backref("right", uselist=False))
 
+    def calculate_vat(self, pre_vat):
+        specific_vat = self.specific_vat or 1.0
+        untaxable_part = self.untaxable_part or 0.0
+        flat_vat = self.flat_vat or 0.0
 
+        deductions = pre_vat - untaxable_part
+
+        if self.max_taxable:
+            deductions = min(deductions, self.max_taxable)
+
+        vat_added = specific_vat * deductions + flat_vat
+
+        if self.max_vat:
+            vat_added = min(vat_added, self.max_vat)
+
+        return pre_vat + vat_added, vat_added
+
+
+engine = create_engine('postgresql://postgres:1234@172.17.0.2:5432/postgres') #ad pg stuff here
+
+Session = sessionmaker()
+Session.configure(bind=engine)
+Base.metadata.create_all(engine)
